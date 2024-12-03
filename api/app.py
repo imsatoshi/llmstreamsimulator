@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 # 初始化 Mistral tokenizer
 logger.info("正在加载 Mistral tokenizer...")
-tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
+tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2", use_auth_token="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")
 logger.info("Mistral tokenizer 加载完成")
 
 @app.route('/api/tokenize', methods=['POST'])
