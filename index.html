@@ -185,12 +185,32 @@
         }
 
         async function getTokens(text) {
-            if (!tokenizer) {
-                throw new Error('Tokenizer未初始化，请等待加载完成或重试');
+            try {
+                console.log('开始请求tokenize接口...');
+                // 使用 Vercel 部署的 API 地址
+                const response = await fetch('https://你的vercel项目地址.vercel.app/api/tokenize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text }),
+                });
+                
+                console.log('收到响应:', response.status);
+                if (!response.ok) {
+                    throw new Error(`API请求失败，状态码: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('解析响应数据:', data);
+                if (data.error) {
+                    throw new Error(`服务器错误: ${data.error}`);
+                }
+                return data.tokens;
+            } catch (error) {
+                console.error('获取token失败:', error);
+                throw error;
             }
-            const encoding = await tokenizer.encode(text);
-            const tokens = await tokenizer.batch_decode(encoding.map(id => [id]), { skip_special_tokens: true });
-            return tokens;
         }
 
         async function updateTokenCount() {
