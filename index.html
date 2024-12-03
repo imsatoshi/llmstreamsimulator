@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Stream Output Simulator</title>
+    <div id="loading" style="position: fixed; top: 0; left: 0; right: 0; background: #ffeb3b; color: black; text-align: center; padding: 10px; z-index: 1000;">
+        正在加载模型，请稍候...（首次加载可能需要一些时间）
+    </div>
     <script src="https://unpkg.com/@xenova/transformers"></script>
     <style>
         body {
@@ -123,19 +126,58 @@
         let cachedTokens = null;
         let tokenizer = null;
 
-        // Initialize the tokenizer
         async function initTokenizer() {
             try {
-                const { AutoTokenizer } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.15.1/+esm');
-                tokenizer = await AutoTokenizer.from_pretrained('Xenova/mistral-7b-instruct-v0.2');
+                const errorDiv = document.getElementById('error-message');
+                if (errorDiv) {
+                    errorDiv.style.display = 'none';
+                }
+
+                const { pipeline, AutoTokenizer } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.15.1/+esm');
+                
+                pipeline.config = {
+                    cache_dir: './models',
+                    local_files_only: false
+                };
+
+                tokenizer = await AutoTokenizer.from_pretrained('gpt2', {
+                    quantized: false,
+                    progress_callback: function(progress) {
+                        const loadingDiv = document.getElementById('loading');
+                        if (loadingDiv) {
+                            loadingDiv.textContent = `正在加载模型...${Math.round(progress * 100)}%`;
+                        }
+                    }
+                });
+                
                 console.log('Tokenizer loaded successfully');
+                
+                const loadingDiv = document.getElementById('loading');
+                if (loadingDiv) {
+                    loadingDiv.style.display = 'none';
+                }
             } catch (error) {
                 console.error('Error loading tokenizer:', error);
-                alert('加载tokenizer时发生错误，请刷新页面重试');
+                const errorHtml = `
+                    <div id="error-message" style="position: fixed; top: 0; left: 0; right: 0; background: #ff5252; color: white; text-align: center; padding: 10px; z-index: 1000;">
+                        加载模型失败: ${error.message}
+                        <button onclick="retryInitTokenizer()" style="margin-left: 10px; padding: 5px 10px; border: none; background: white; color: #ff5252; border-radius: 4px; cursor: pointer;">
+                            重试
+                        </button>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('afterbegin', errorHtml);
             }
         }
 
-        // Initialize tokenizer when page loads
+        async function retryInitTokenizer() {
+            const loadingDiv = document.getElementById('loading');
+            if (loadingDiv) {
+                loadingDiv.style.display = 'block';
+            }
+            await initTokenizer();
+        }
+
         initTokenizer();
 
         function sleep(ms) {
@@ -144,7 +186,7 @@
 
         async function getTokens(text) {
             if (!tokenizer) {
-                throw new Error('Tokenizer not initialized');
+                throw new Error('Tokenizer未初始化，请等待加载完成或重试');
             }
             const encoding = await tokenizer.encode(text);
             const tokens = await tokenizer.batch_decode(encoding.map(id => [id]), { skip_special_tokens: true });
