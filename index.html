@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Stream Output Simulator</title>
+    <script src="https://unpkg.com/@xenova/transformers"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -32,6 +33,9 @@
         }
         .controls {
             margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
         }
         input[type="number"] {
             width: 100px;
@@ -54,9 +58,34 @@
             background-color: #f8f9fa;
             padding: 15px;
             border-radius: 4px;
-            min-height: 100px;
-            white-space: pre-wrap;
+            height: 200px;
+            overflow-y: auto;
+            line-height: 1.8;
             border: 1px solid #ddd;
+            font-family: monospace;
+            scroll-behavior: smooth;
+        }
+        .token-info {
+            margin-top: 10px;
+            color: #666;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .token {
+            display: inline-block;
+            background-color: #e9ecef;
+            border: 1px solid #dee2e6;
+            border-radius: 3px;
+            padding: 0 4px;
+            margin: 0 2px;
+            font-family: monospace;
+            font-size: 14px;
+            color: #495057;
+        }
+        .token:hover {
+            background-color: #dee2e6;
         }
     </style>
 </head>
@@ -70,8 +99,17 @@
         </div>
 
         <div class="controls">
-            <label for="interval">Token间隔时间（毫秒）：</label>
-            <input type="number" id="interval" value="50" min="10" max="1000">
+            <div>
+                <label for="interval">Token间隔时间（毫秒）：</label>
+                <input type="number" id="interval" value="50" min="10" max="1000">
+            </div>
+            <div>
+                <label for="initial-delay">初始等待时间（秒）：</label>
+                <input type="number" id="initial-delay" value="3" min="0" max="10">
+            </div>
+            <div class="token-info">
+                Token数量：<span id="token-count">0</span>
+            </div>
         </div>
 
         <button onclick="startStreaming()">开始流式输出</button>
@@ -82,9 +120,59 @@
 
     <script>
         let isStreaming = false;
+        let cachedTokens = null;
+        let tokenizer = null;
+
+        // Initialize the tokenizer
+        async function initTokenizer() {
+            try {
+                const { AutoTokenizer } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.15.1/+esm');
+                tokenizer = await AutoTokenizer.from_pretrained('Xenova/mistral-7b-instruct-v0.2');
+                console.log('Tokenizer loaded successfully');
+            } catch (error) {
+                console.error('Error loading tokenizer:', error);
+                alert('加载tokenizer时发生错误，请刷新页面重试');
+            }
+        }
+
+        // Initialize tokenizer when page loads
+        initTokenizer();
 
         function sleep(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function getTokens(text) {
+            if (!tokenizer) {
+                throw new Error('Tokenizer not initialized');
+            }
+            const encoding = await tokenizer.encode(text);
+            const tokens = await tokenizer.batch_decode(encoding.map(id => [id]), { skip_special_tokens: true });
+            return tokens;
+        }
+
+        async function updateTokenCount() {
+            const text = document.getElementById('input-text').value;
+            const countSpan = document.getElementById('token-count');
+            
+            if (!text) {
+                countSpan.textContent = '0';
+                cachedTokens = null;
+                return;
+            }
+
+            countSpan.textContent = '计算中...';
+            
+            try {
+                const tokens = await getTokens(text);
+                cachedTokens = tokens;
+                countSpan.textContent = tokens.length;
+            } catch (error) {
+                console.error('Token count error:', error);
+                countSpan.textContent = '错误';
+                cachedTokens = null;
+                alert(error.message);
+            }
         }
 
         async function startStreaming() {
@@ -92,6 +180,7 @@
             
             const inputText = document.getElementById('input-text').value;
             const interval = parseInt(document.getElementById('interval').value);
+            const initialDelay = parseInt(document.getElementById('initial-delay').value) * 1000;
             const outputDiv = document.getElementById('output');
             
             if (!inputText) {
@@ -99,19 +188,49 @@
                 return;
             }
 
-            isStreaming = true;
-            outputDiv.textContent = '';
-            
-            // 将文本分割成token（这里简单按字符分割）
-            const tokens = inputText.split('');
-            
-            for (let token of tokens) {
-                outputDiv.textContent += token;
-                await sleep(interval);
+            if (!tokenizer) {
+                alert('Tokenizer还未加载完成，请稍候...');
+                return;
             }
+
+            isStreaming = true;
+            outputDiv.textContent = '准备开始...';
             
-            isStreaming = false;
+            try {
+                await sleep(initialDelay);
+                outputDiv.innerHTML = '';
+                
+                const tokens = cachedTokens || await getTokens(inputText);
+                
+                for (let token of tokens) {
+                    const tokenSpan = document.createElement('span');
+                    tokenSpan.className = 'token';
+                    tokenSpan.textContent = token;
+                    outputDiv.appendChild(tokenSpan);
+                    outputDiv.scrollTop = outputDiv.scrollHeight;
+                    await sleep(interval);
+                }
+            } catch (error) {
+                console.error('Error during streaming:', error);
+                alert('处理文本时发生错误: ' + error.message);
+            } finally {
+                isStreaming = false;
+            }
         }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        document.getElementById('input-text').addEventListener('input', debounce(updateTokenCount, 500));
     </script>
 </body>
 </html>
